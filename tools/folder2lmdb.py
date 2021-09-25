@@ -1,14 +1,11 @@
-import os
-import os.path as osp
 import os, sys
-import os.path as osp
 from PIL import Image
 import six
 import string
 
 import lmdb
 import pickle
-import msgpack
+# import msgpack
 import tqdm
 import pyarrow as pa
 
@@ -23,7 +20,7 @@ from torchvision import transforms, datasets
 class ImageFolderLMDB(data.Dataset):
     def __init__(self, db_path, transform=None, target_transform=None):
         self.db_path = db_path
-        self.env = lmdb.open(db_path, subdir=osp.isdir(db_path),
+        self.env = lmdb.open(db_path, subdir=os.path.isdir(db_path),
                              readonly=True, lock=False,
                              readahead=False, meminit=False)
         with self.env.begin(write=False) as txn:
@@ -66,53 +63,6 @@ class ImageFolderLMDB(data.Dataset):
         return self.__class__.__name__ + ' (' + self.db_path + ')'
 
 
-class ImageFolderLMDB_old(data.Dataset):
-    def __init__(self, db_path, transform=None, target_transform=None):
-        import lmdb
-        self.db_path = db_path
-        self.env = lmdb.open(db_path, subdir=osp.isdir(db_path),
-                             readonly=True, lock=False,
-                             readahead=False, meminit=False)
-        with self.env.begin(write=False) as txn:
-            self.length = txn.stat()['entries'] - 1
-            self.keys = msgpack.loads(txn.get(b'__keys__'))
-        # cache_file = '_cache_' + db_path.replace('/', '_')
-        # if os.path.isfile(cache_file):
-        #     self.keys = pickle.load(open(cache_file, "rb"))
-        # else:
-        #     with self.env.begin(write=False) as txn:
-        #         self.keys = [key for key, _ in txn.cursor()]
-        #     pickle.dump(self.keys, open(cache_file, "wb"))
-        self.transform = transform
-        self.target_transform = target_transform
-
-    def __getitem__(self, index):
-        img, target = None, None
-        env = self.env
-        with env.begin(write=False) as txn:
-            byteflow = txn.get(self.keys[index])
-        unpacked = msgpack.loads(byteflow)
-        imgbuf = unpacked[0][b'data']
-        buf = six.BytesIO()
-        buf.write(imgbuf)
-        buf.seek(0)
-        img = Image.open(buf).convert('RGB')
-        target = unpacked[1]
-
-        if self.transform is not None:
-            img = self.transform(img)
-
-        if self.target_transform is not None:
-            target = self.target_transform(target)
-
-        return img, target
-
-    def __len__(self):
-        return self.length
-
-    def __repr__(self):
-        return self.__class__.__name__ + ' (' + self.db_path + ')'
-
 
 def raw_reader(path):
     with open(path, 'rb') as f:
@@ -131,12 +81,12 @@ def dumps_pyarrow(obj):
 
 
 def folder2lmdb(dpath, name="train", write_frequency=5000, num_workers=16):
-    directory = osp.expanduser(osp.join(dpath, name))
+    directory = os.path.expanduser(os.path.join(dpath, name))
     print("Loading dataset from %s" % directory)
     dataset = ImageFolder(directory, loader=raw_reader)
     data_loader = DataLoader(dataset, num_workers=num_workers, collate_fn=lambda x: x)
 
-    lmdb_path = osp.join(dpath, "%s.lmdb" % name)
+    lmdb_path = os.path.join(dpath, "%s.lmdb" % name)
     isdir = os.path.isdir(lmdb_path)
 
     print("Generate LMDB to %s" % lmdb_path)
@@ -165,7 +115,6 @@ def folder2lmdb(dpath, name="train", write_frequency=5000, num_workers=16):
     print("Flushing database ...")
     db.sync()
     db.close()
-
 
 if __name__ == "__main__":
     import argparse
